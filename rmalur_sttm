@@ -1,0 +1,187 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jun 15 14:43:34 2021
+
+@author: pjoshi2
+"""
+
+import pandas as pd
+df = pd.read_csv("C:\\Users\\pjoshi2\\Desktop\\ML data\\clustering\\data_malur.csv",encoding='cp1252')
+pd.set_option("display.max_colwidth", 800)
+df['OPEN_BY_USR_NM'] = df['OPEN_BY_USR_NM'].str.strip() 
+df=df[(df.OPEN_BY_USR_NM != "Event Management") & (df.OPEN_BY_USR_NM != 'IBM Envision Web Services')]
+len(df)
+
+df["clean_sd"] = df['SHRT_DESC'].apply(lambda x: " ".join(x.lower() for x in x.split()))
+#checking for nulls
+#print(df['SHRT_DESC'].isnull().sum()) 
+
+df['clean_sd'] = df['clean_sd'].str.replace('[^\w\s]',' ')
+from nltk.corpus import stopwords
+stop_words = set(stopwords.words('english'))
+df['clean_sd'] = df['clean_sd'].apply(lambda x: " ".join(x for x in x.split() if x not in stop_words)) #stopwords removal
+'''
+import nltk
+from nltk.stem import WordNetLemmatizer 
+# Init the Wordnet Lemmatizer
+lemmatizer = WordNetLemmatizer()
+# Lemmatize Single Word
+df["lemm"] = df['clean_sd'].apply(lambda x: " ".join(lemmatizer.lemmatize(x) for x in x.split()))
+df["lemm"] = df['lemm'].apply(lambda x: " ".join(lemmatizer.lemmatize(x,'n') for x in x.split()))
+df["lemm"] = df['lemm'].apply(lambda x: " ".join(lemmatizer.lemmatize(x,'v') for x in x.split()))
+df["lemm"] = df['lemm'].apply(lambda x: " ".join(lemmatizer.lemmatize(x,'r') for x in x.split()))
+'''
+df_new = df[["INCIDENT_NBR","SHRT_DESC","clean_sd","CNFG_ITEM_NM", "CLOS_NT_TXT","CTG_DESC"]]
+#filtering data with service request related text in short description
+#df_servicereq =df_new[df_new['lemm'].str.contains("service request")|df_new['lemm'].str.contains("servicenow")]
+################################
+#df_servicereq = df_new
+df_new=df_new.reset_index()
+del df_new['index']
+#df_servicereq.dropna(subset=['CLOS_NT_TXT'], inplace=True) 
+import re
+test = pd.DataFrame([re.split('(Reason for the failure/error\? | Steps taken to resolve the incident\?|Is this a recurring issue\?|What was the business impact\?)', str(x)) for x in df_new["CLOS_NT_TXT"]])
+test.columns=["col"+str(i) for i in range(1, 10)] 
+del test['col1']
+#_________________________________________________________________________________
+newdf = test
+newdf['INCIDENT_NBR']= df_new['INCIDENT_NBR']
+newdf['SHRT_DESC']= df_new['SHRT_DESC']
+newdf['CTG_DESC']= df_new['CTG_DESC']
+
+#splitting into question and answer
+df_new1 = test[["INCIDENT_NBR", "SHRT_DESC","CTG_DESC","col2","col3"]]
+df_new1.columns = ["INCIDENT_NBR", "SHRT_DESC","CTG_DESC","ques","ans"]
+df_new2 = test[["INCIDENT_NBR", "SHRT_DESC","CTG_DESC","col4","col5"]]
+df_new2.columns = ["INCIDENT_NBR", "SHRT_DESC","CTG_DESC","ques","ans"]
+df_new3 = test[["INCIDENT_NBR", "SHRT_DESC","CTG_DESC","col6","col7"]]
+df_new3.columns = ["INCIDENT_NBR", "SHRT_DESC","CTG_DESC","ques","ans"]
+df_new4 = test[["INCIDENT_NBR", "SHRT_DESC","CTG_DESC","col8","col9"]]
+df_new4.columns = ["INCIDENT_NBR", "SHRT_DESC","CTG_DESC","ques","ans"]
+
+
+#concat all questions in one df having que and ans as 2 columns
+df_rows = []
+df_rows = pd.concat([df_new1,df_new2, df_new3, df_new4])#,df_new6, df_new7,df_new8,df_new9,df_new10, df_new11,df_new12])
+#df_rows = df_rows.dropna()#drops the row with atleast one na value as those are que with no answers
+#replace empty rows by nan then use drop na 
+#import numpy as np
+df_rows['ques'] = df_rows['ques'].str.strip()
+df_rows['ans'] = df_rows['ans'].str.strip()
+df_rows.ques.value_counts()
+
+#replace empty rows by nan then use drop na 
+df_rows['ques'].isnull().sum()
+df_rows=df_rows.dropna(subset=['ans'])
+
+import nltk
+import string
+from nltk.corpus import stopwords
+stop_words = set(stopwords.words('english'))
+new_stopwords = ['the']
+stop_words = stop_words.union(new_stopwords)
+df_rows['ans'] = df_rows['ans'].map(lambda x: x.lower())
+#df_rows['ansnew'] = df_rows['ans'].apply(lambda x: " ".join(x for x in x.split() if x not in stop_words))
+df_rows['ansnew'] = df_rows['ans'].apply(lambda x:''.join([i for i in x if i not in string.punctuation]))
+
+q1 = df_rows[(df_rows.ques == 'What was the business impact?')]
+q2 = df_rows[(df_rows.ques == 'Reason for the failure/error?')]
+q3 = df_rows[(df_rows.ques == 'Steps taken to resolve the incident?')]
+q4 = df_rows[(df_rows.ques == 'Is this a recurring issue?')]
+q3['ans']=q3['ans'].str.replace('thru','through')
+q3['ans']=q3.ans.replace('\s+', ' ', regex=True)
+#__________________________________________________________________________________________
+requests = q3[q3['ans'].str.contains("request")]
+#req_newkb = requests[requests['ans'].str.contains("request new kb")]
+password_req=requests[requests['ans'].str.contains("password") & -requests['ans'].str.contains("request new kb")]#1
+
+walked= requests[requests['ans'].str.contains("walked user through submitting request")|
+        requests['ans'].str.contains("walked caller through request")]#2
+
+request_newkb = requests[requests['ans'].str.contains("request new kb") &
+                         -requests['ans'].str.contains("password")]#3
+
+remaining=requests[-requests['ans'].isin(walked.ans) & 
+                   -requests['ans'].isin(password_req.ans) & -requests['ans'].isin(request_newkb.ans)]
+
+#__________________________________________________________________________________________
+hardware= remaining[remaining['ans'].str.contains("mouse")|
+        remaining['ans'].str.contains("laptop")|remaining['ans'].str.contains("computer")|
+        remaining['ans'].str.contains("cable")|remaining['ans'].str.contains("monitor")|
+        remaining['ans'].str.contains("cord")]#4
+
+shared=remaining[remaining['ans'].str.contains("shared")|remaining['ans'].str.contains("ownership")|
+        remaining['ans'].str.contains("directory")|remaining['ans'].str.contains("distribution")]#shared mailbox/drive/folder
+
+remaining=remaining[-requests['ans'].isin(hardware.ans) & 
+                   -remaining['ans'].isin(shared.ans)]
+
+#_________________________________________________________________________________________
+outlook_teams = remaining[remaining['ans'].str.contains("outlook")|remaining['ans'].str.contains("teams")]
+docApp_access=remaining[remaining['ans'].str.contains("installation")|remaining['ans'].str.contains("adobe")|
+        (remaining['ans'].str.contains("access") & remaining['ans'].str.contains("document"))|
+        remaining['ans'].str.contains("access") & remaining['ans'].str.contains("application")]
+
+remaining=remaining[-remaining['ans'].isin(outlook_teams.ans) & -remaining['ans'].isin(docApp_access.ans)]
+#application_access=remaining[remaining['ans'].str.contains("access") & remaining['ans'].str.contains("application")]#1
+irrelavant = remaining[remaining['SHRT_DESC'].str.contains("RE:")]#close/cancel/submit new request
+access=remaining[remaining['ans'].str.contains("access")]
+remaining=remaining[-remaining['ans'].isin(irrelavant.ans) & -remaining['ans'].isin(access.ans)]
+#_________________________________________________________________________________________
+adhocEworkflowpeep_requests = remaining[remaining['ans'].str.contains("adhoc")|remaining['ans'].str.contains("ad-hoc")|
+        remaining['ans'].str.contains("ad hoc")|remaining['ans'].str.contains("cti error")|
+        remaining['ans'].str.contains("eworkflow")|remaining['ans'].str.contains("peep")|
+        remaining['ans'].str.contains("walked")|
+        remaining['ans'].str.contains("self service")|remaining['ans'].str.contains("software")]
+
+remaining=remaining[-remaining['ans'].isin(adhocEworkflowpeep_requests.ans)]
+non_snowrequest = remaining[remaining['ans'].str.contains("requesting") | 
+        remaining['ans'].str.contains("meraki devices")|remaining['ans'].str.contains("desk")|
+        remaining['ans'].str.contains("email")]
+remaining=remaining[-remaining['ans'].isin(non_snowrequest.ans)]
+
+snow_ritm = remaining[remaining['ans'].str.contains("servicenow")|remaining['ans'].str.contains("service now")|
+        remaining['ans'].str.contains("ritm")]
+remaining=remaining[-remaining['ans'].isin(snow_ritm.ans)]
+#check
+test2 = pd.DataFrame([re.split('(step)', str(x)) for x in request_newkb["ans"]])
+test2.columns=["col"+str(i) for i in range(0, 19)] 
+
+
+
+import unicodedata
+def basic_clean(text):
+  wnl = nltk.stem.WordNetLemmatizer()
+  stopwords = nltk.corpus.stopwords.words('english')
+  text = (unicodedata.normalize('NFKD', text)
+    .encode('ascii', 'ignore')
+    .decode('utf-8', 'ignore')
+    .lower())
+  words = re.sub(r'[^\w\s]', ' ', text).split()
+  return [wnl.lemmatize(word) for word in words if word not in stopwords]
+
+words=basic_clean(''.join(str(remaining['ansnew'].tolist())))
+a = pd.DataFrame(pd.Series(nltk.ngrams(words, 1)).value_counts())
+
+df_procedure.to_csv("C:\\Users\\pjoshi2\\Desktop\\ML data\\clustering\\df_procedure.csv")
+
+
+a=test2[(test2.col3 == 'act')]
+
+#analysind test2
+#__________________________________________________________________________________
+
+import unicodedata
+def basic_clean(text):
+  wnl = nltk.stem.WordNetLemmatizer()
+  stopwords = nltk.corpus.stopwords.words('english')
+  text = (unicodedata.normalize('NFKD', text)
+    .encode('ascii', 'ignore')
+    .decode('utf-8', 'ignore')
+    .lower())
+  words = re.sub(r'[^\w\s]', ' ', text).split()
+  return [wnl.lemmatize(word) for word in words if word not in stopwords]
+
+#words = q3['ansnew'].tolist()
+words=basic_clean(''.join(str(remaining['ansnew'].tolist())))
+pd.DataFrame(pd.Series(nltk.ngrams(words, 1)).value_counts())[:20]
