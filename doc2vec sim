@@ -1,0 +1,63 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Oct 26 14:26:37 2020
+
+@author: pjoshi2
+"""
+import pandas as pd
+import numpy as np
+from gensim.models.doc2vec import LabeledSentence
+from gensim.models import Doc2Vec
+
+df= pd.read_csv("C:\\Users\\pjoshi2\\Desktop\\dummy data.csv",encoding='cp1252')
+# dummy data.csv
+text_corpus = df["Incident_Short_Desc"].to_list()
+
+#minimal preprocess
+# Create a set of frequent words
+stoplist = set('for a of the and to in'.split(' '))
+# Lowercase each document, split it by white space and filter out stopwords
+texts = [[word for word in document.lower().split()]
+         for document in text_corpus]
+
+# Count frequency of each word
+from collections import defaultdict
+frequency = defaultdict(int)
+for text in texts:
+    for token in text:
+        frequency[token] += 1
+import gensim
+# Only keep words that appear more than once
+processed_corpus = [[token for token in text if frequency[token] > 1] for text in texts]
+def tagged_document(list_of_list_of_words):
+   for i, list_of_words in enumerate(list_of_list_of_words):
+      yield gensim.models.doc2vec.TaggedDocument(list_of_words, [i])
+data_for_training = list(tagged_document(processed_corpus))
+data_for_training
+print(data_for_training [:1])
+
+
+
+
+
+query_document = 'TASKMON FOUND CHGMAND NOT UP ON SYSA Please InvestigateOccurred date:01/24/2020 Occurred time:23:30:'.lower().split()
+data_for_testing = list(tagged_document(query_document))
+data_for_testing
+model = gensim.models.doc2vec.Doc2Vec(vector_size=50, min_count=2, epochs=40)
+model.build_vocab(data_for_training)
+#model.train(data_for_training, total_examples=model.corpus_count, epochs=model.epochs)
+model.train(data_for_training, total_examples=model.corpus_count, epochs=model.epochs)
+ranks = []
+second_ranks = []
+for doc_id in range(len(data_for_training)):
+    inferred_vector = model.infer_vector(data_for_training[doc_id].words)
+    sims = model.docvecs.most_similar([inferred_vector], topn=len(model.docvecs))
+    rank = [docid for docid, sim in sims].index(doc_id)
+    ranks.append(rank)
+    
+    second_ranks.append(sims[1])
+print('Document ({}): «{}»\n'.format(doc_id, ' '.join(data_for_training[doc_id].words)))
+print(u'SIMILAR/DISSIMILAR DOCS PER MODEL %s:\n' % model)
+for label, index in [('MOST', 0), ('SECOND-MOST', 1), ('MEDIAN', len(sims)//2), ('LEAST', len(sims) - 1)]:
+    print(u'%s %s: «%s»\n' % (label, sims[index], ' '.join(data_for_training[sims[index][0]].words)))
+    
