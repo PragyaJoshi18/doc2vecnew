@@ -1,0 +1,113 @@
+import pandas as pd
+import re
+sn_rec = pd.read_csv("S:\\TechAnalytics\\Aditya Workspace\\Text Analytics\\p1 bridge notes.csv", encoding = 'cp1252')
+worknotes_csv = pd.read_csv("S:\\TechAnalytics\\Aditya Workspace\\Text Analytics\\IncidentText_P1_2020To2021.csv", encoding = 'cp1252')
+
+import os
+import glob
+path = r'C:\\Users\\pjoshi2\\Desktop\\ML data\\alldata'                     # use your path
+all_files = glob.glob(os.path.join(path, "*.xlsx"))     # advisable to use os.path.join as this makes concatenation OS independent
+import pandas as pd
+df_from_each_file = (pd.read_excel(f) for f in all_files)
+concatenated_df   = pd.concat(df_from_each_file, ignore_index=True)
+
+print(sn_rec['u_bridge_notes'].isnull().sum()) #56 rows in bridge notes column has null values
+sn_rec.dropna(subset=['u_bridge_notes'], inplace=True)
+concatenated_df.dropna(subset=['Work notes'], inplace=True)
+
+sn_rec['u_bridge_notes']=sn_rec['u_bridge_notes'].apply(str)
+sn_rec.reset_index(drop=True, inplace=True)
+sn_rec['opened_at'] = pd.to_datetime(sn_rec['opened_at'])
+#sn_rec.info()
+sn_rec = sn_rec[(sn_rec['opened_at'] >= "2020-01-01")]
+sn_rec.rename(columns = {'u_bridge_notes':'notes'}, inplace = True)
+worknotes_csv.rename(columns = {'work_notes':'notes'}, inplace = True)
+
+full_df = worknotes_csv[["number","assignment_group","notes"]].append(sn_rec[["number","assignment_group","notes"]], ignore_index=True)
+full_df.dropna(subset=['notes'], inplace=True)
+concatenated_df.rename(columns = {'Number':'number'}, inplace = True)
+concatenated_df.rename(columns = {'Assignment group':'assignment_group'}, inplace = True)
+concatenated_df.rename(columns = {'Work notes':'notes'}, inplace = True)
+full_df = concatenated_df[["number","assignment_group","notes"]].append(full_df[["number","assignment_group","notes"]], ignore_index=True)
+
+full_df['notes'] = full_df['notes'].str.replace(r'(?<=#INC)[\d]*', '')
+full_df['notes'] = full_df['notes'].str.replace(r'(?<=INC)[\d]*', '')
+full_df['notes'] = full_df['notes'].str.replace(r'(?<=CHG)[\d]*', '')
+full_df['notes'] = full_df['notes'].str.replace(r'(?<=PRB)[\d]*', '')
+full_df['notes'] = full_df['notes'].str.replace(r'(?<=EVNT)[\d]*', '')
+full_df['notes'] = full_df['notes'].str.replace(r'(?<=Alert)[\d]*', '')
+full_df['notes']=full_df['notes'].apply(str)
+full_df.reset_index(drop=True, inplace=True)
+pd.set_option("display.max_colwidth", 800)
+full_df['notes']
+
+full_df['notes']=full_df['notes'].astype(str).str.replace("Work notes","")
+
+#removing time from work notes data and https from overall text
+full_df['notes'].replace({'\d+[\/:\-]\d+[\/:\-\s]*[\dAaPpMm]*' : '', '\w+\s\d+[\,]\s\d+' : ''},
+    regex=True,
+    inplace=True,
+    )
+#removing url
+full_df['notes']=full_df['notes'].replace(to_replace =r'http\S+', value = ' ', regex = True) 
+
+#replaces time from the bridge notes part of text corpus
+full_df['notes'].replace({'([01]?[0-9]|2[0-3])(:|.)[0-5][0-9](\\s)?(?i)(am|pm|CT)' : '', '([01]?[0-9]|2[0-3]):[0-5][0-9]' : '','[0-9]{1,2}(:|.)??[0-9]{0,2}\s?(?i)(am|pm|CT)' : ''},
+    regex=True,
+    inplace=True,
+    )
+
+#replaces date from the bridge notes part of text corpus
+import re
+full_df['notes'].replace({'(([0-9]|0[1-9]|1[012]))[- /.]([0-9]|0[1-9]|[12][0-9]|3[01])[- /.](19|20)\d\d' : ''},
+    regex=True,
+    inplace=True,
+    )
+full_df
+
+full_df = full_df[full_df['assignment_group'].map(full_df['assignment_group'].value_counts()) > 1]
+
+full_df['notes']=full_df['notes'].str.replace(r'[^\w]', ' ') #this code will remove all the additional symbols from the data. execute it after removing dates and url's
+from sklearn.model_selection import train_test_split
+train,test = train_test_split(full_df, test_size=0.1, stratify = full_df['assignment_group'])
+
+text_corpus = train['notes'].to_list()
+# Lowercase each document, split it by white space and filter out stopwords
+texts = [[word for word in document.lower().split()]
+         for document in text_corpus]
+from nltk.corpus import stopwords
+#nltk.download('stopwords')
+from nltk.tokenize import word_tokenize
+english_sw = stopwords.words('english')
+print(english_sw)
+english_sw.extend(["the", "that", "of"])
+texts_without_sw = [[word for word in text if not word in english_sw] for text in texts]
+
+list_id = list(train["number"]) 
+list_def = list(texts_without_sw)
+from gensim.models.doc2vec import Doc2Vec, TaggedDocument
+tagged_data = [TaggedDocument(words= term_def, tags=[list_id[i]]) for i, term_def in enumerate(list_def)]
+import gensim
+model = gensim.models.doc2vec.Doc2Vec(dm=1, vector_size=10, min_count=5, epochs=2) #issue
+model.build_vocab(tagged_data)
+#model.train(data_for_training, total_examples=model.corpus_count, epochs=model.epochs)
+model.train(tagged_data, total_examples=model.corpus_count, epochs=model.epochs)
+#https://stackoverflow.com/questions/47890052/improving-gensim-doc2vec-results published work epochs 10-20
+x=test['notes'].values[1]
+test_data = x.lower().split()
+v1 = model.infer_vector('test_data'.lower().split())
+
+#enlists similar vectors to the searched text
+sims_new = model.docvecs.most_similar([v1], topn=len(model.docvecs))
+sims_df =  pd.DataFrame(sims_new)
+sims_df.columns =['number','similarity']
+new_df = pd.merge(train, sims_df, on=['number'])
+new_df.sort_values(by=['similarity'], ascending=False,inplace=True)
+pd.set_option("display.max_colwidth", 800)
+new_df.head(20) 
+
+pd.set_option("display.max_colwidth", 800)
+new_df[new_df['assignment_group']=='IBM BR TWS Tool Support']
+
+doc_tags = list(model.docvecs.doctags.keys())
+X=model[doc_tags]
