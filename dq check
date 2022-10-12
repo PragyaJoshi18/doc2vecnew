@@ -1,0 +1,87 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jul 23 06:57:24 2021
+
+@author: pjoshi2
+"""
+#_____________________________________DATA QUALITY CHECK__________________________________                     
+import pandas as pd
+ctsd = pd.read_csv("C:\\Users\\pjoshi2\\Desktop\\ML data\\clustering\\CTSD analysis\\ctsd incidents.csv",encoding='cp1252')
+ctsd.Incident_Assignment_Group.value_counts()
+ctsd = ctsd[(ctsd.Incident_Assignment_Group == 'CTSD Basic')]
+ctsd=ctsd.reset_index()
+
+#select only ctsd basic
+
+import re
+ctsd['close_notes'] = ctsd['close_notes'].str.strip()#removing whitespace
+
+test = pd.DataFrame([re.split('(Reason for the failure/error\? | Steps taken to resolve the incident\?|Is this a recurring issue\?|What was the business impact\?)', str(x)) for x in ctsd["close_notes"]])
+test.columns=["col"+str(i) for i in range(1, 10)] 
+test['Incident_Number']= ctsd['Incident_Number']#adding incident no. to use as key later
+
+#dataset having no questions
+new=test[test['col1'].str.match('^\d+\)')== False]#No digits in column 1
+ques=test[test['col1'].str.match('^\d+\)')== True]#digits followed by bracket in col1
+#ctsd=ctsd.dropna(subset=['close_notes'])
+#del test['col1']
+ques = pd.concat([ques,new[new.col2.notnull()]])#adding rows from new which are not null
+new=new[-new.col2.notnull()]
+ques[ques["Incident_Number"].duplicated()]#0 duplicates
+
+
+df_new1 = ques[["Incident_Number","col2","col3"]]
+df_new1.columns = ["Incident_Number","ques","ans"]
+df_new2 = ques[["Incident_Number","col4","col5"]]
+df_new2.columns = ["Incident_Number","ques","ans"]
+df_new3 = ques[["Incident_Number","col6","col7"]]
+df_new3.columns = ["Incident_Number","ques","ans"]
+df_new4 = ques[["Incident_Number","col8","col9"]]
+df_new4.columns = ["Incident_Number","ques","ans"]
+
+df_rows = []
+df_rows = pd.concat([df_new1,df_new2, df_new3, df_new4])#,df_new6, df_new7,df_new8,df_new9,df_new10, df_new11,df_new12])
+#df_rows = df_rows.dropna()#drops the row with atleast one na value as those are que with no answers
+#replace empty rows by nan then use drop na 
+#import numpy as np
+df_rows['ques'] = df_rows['ques'].str.strip()
+df_rows['ans'] = df_rows['ans'].str.strip()
+#drop rows where we have NA against an incident
+df_rows['ques'].isnull().sum()
+df_rows=df_rows.dropna(subset=['ans'])
+datatable=pd.DataFrame(df_rows.Incident_Number.value_counts())
+datatable.Incident_Number.value_counts()
+df_rows.ques.value_counts()
+datatable.to_csv("C:\\Users\\pjoshi2\\Desktop\\ML data\\clustering\\CTSD analysis\\datatable.csv")
+
+#replace empty rows by nan then use drop na 
+df_rows['ques'].isnull().sum()
+df_rows=df_rows.dropna(subset=['ans'])
+
+#______________________________________________________________________________________
+import nltk
+q1 = df_rows[(df_rows.ques == 'What was the business impact?')]
+q2 = df_rows[(df_rows.ques == 'Reason for the failure/error?')]
+q3 = df_rows[(df_rows.ques == 'Steps taken to resolve the incident?')]
+q4 = df_rows[(df_rows.ques == 'Is this a recurring issue?')]
+words = q3['ans'].tolist()
+a=pd.DataFrame(pd.Series(nltk.ngrams(words, 1)).value_counts())
+
+
+walked = q3[q3['ans'].str.contains("walked")]
+
+
+walked=pd.merge(walked, ctsd[["Incident_Number","Incident_Short_Desc","title","dept_desc","country_name",
+                                     "lob_name","start_date","employee_number","CNFG_ITEM_NM"]], on="Incident_Number")
+
+browser = df_rows[df_rows['ans'].str.contains("browser")]
+browser=pd.merge(browser, ctsd[["Incident_Number","Incident_Short_Desc","title","dept_desc","country_name",
+                                     "lob_name","start_date","employee_number", "CNFG_ITEM_NM"]], on="Incident_Number")
+
+reboot = df_rows[df_rows['ans'].str.contains("reboot")]
+reboot=pd.merge(reboot, ctsd[["Incident_Number","Incident_Short_Desc","title","dept_desc","country_name",
+                                     "lob_name","start_date","employee_number","CNFG_ITEM_NM"]], on="Incident_Number")
+
+walked.to_csv("C:\\Users\\pjoshi2\\Desktop\\ML data\\clustering\\CTSD analysis\\walked.csv")
+
+
