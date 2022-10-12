@@ -1,0 +1,117 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Jan 21 22:45:43 2021
+
+@author: pjoshi2
+"""
+#reading all files in the folder at once
+import os
+import glob
+path = r'C:\Users\pjoshi2\Desktop\ML data\incidents_worknotes\Oct - Dec'                     # use your path
+all_files = glob.glob(os.path.join(path, "*.csv"))     # advisable to use os.path.join as this makes concatenation OS independent
+
+import pandas as pd
+df_from_each_file = (pd.read_csv(f) for f in all_files)
+concatenated_df   = pd.concat(df_from_each_file, ignore_index=True)
+list(concatenated_df.columns) 
+
+concatenated_df #work notes and number is required
+req_data = concatenated_df[["number","priority","assignment_group","work_notes", "short_description"]]
+
+#text_corpus = req_data["work_notes"].to_list()
+
+#import nltk
+#words = set(nltk.corpus.words.words())
+#print(sent.replace('<u><a', '')) #to replace character
+
+from bs4 import BeautifulSoup
+
+req_datatest=req_data
+#to remove date and time 
+req_datatest.dropna(subset=['work_notes'], inplace=True)
+req_datatest["work_notesnew"] =  req_datatest["work_notes"]
+req_datatest["work_notesnew"]=[BeautifulSoup(text).get_text() for text in req_datatest["work_notesnew"]]
+req_datatest['work_notesnew'].replace(
+    {'\d+[\/:\-]\d+[\/:\-\s]*[\dAaPpMm]*' : '', '\w+\s\d+[\,]\s\d+' : ''},
+    regex=True,
+    inplace=True,
+    )
+
+
+#removed n
+req_datatest['work_notesnew1']=req_datatest['work_notesnew'].replace(to_replace =r'\\n', value = ' ', regex = True) 
+#removing url
+req_datatest['work_notesnew1']=req_datatest['work_notesnew1'].replace(to_replace =r'http\S+', value = ' ', regex = True) 
+import regex as re
+s= "  - Manish Kushwaha (Work notes) Hi Team - Please route it to appropriate team    - System (Work notes) Alert# [code]   Alert0205903 [/code] has been generated.  [code]Event Description:[/code] Direct root logon via SSH 3.0 times [code]Account That Performed the Action:[/code]  [code]Action Originated From:[/code] 159.202.139.141 [code]Action Performed:[/code] root logged on via ssh2 from 159.202.139.141 [code]Action Took Place On:[/code]  [code]Event Occurred On:[/code]  .206   [code]For additional event information click: Knowledge Base Article â€“ KB0028698[/code]    [code]Raw log data from SUMO:[/code] <86>T.206472+[localhost] SECURE_RHEL7_IBM: sshd[120017]: Accepted password for root from 159.202.139.141 port 58745 ssh2  #PUMA #PUMA04.Linux.01    - System (Work notes) Alert# [code]   Alert0204060 [/code] has been generated.  [code]Event Description:[/code] Direct root logon via SSH 1.0 times [code]Account That Performed the Action:[/code]  [code]Action Originated From:[/code] 159.202.139.141 [code]Action Performed:[/code] root logged on via ssh2 from 159.202.139.141 [code]Action Took Place On:[/code]  [code]Event Occurred On:[/code]  .188   [code]For additional event information click: Knowledge Base Article â€“ KB0028698[/code]    [code]Raw log data from SUMO:[/code] <86>T.188717+[localhost] SECURE_RHEL7_IBM: sshd[8339]: Accepted password for root from 159.202.139.141 port 58689 ssh2  #PUMA #PUMA04.Linux.01    - System (Work notes) Alert#  [code]Alert0204060[/code] created using rule  Create Incident - PUMA -- MCO.  "
+a=re.sub('[code][^>]+[/code]', '', s)
+
+
+#to remove all square bracket terms
+req_datatest['work_notesnew2']=req_datatest['work_notesnew1'].astype(str).str.replace("[\(\[].*?[\)\]]","")
+
+spec_chars = ["\t\t","\t"]
+for char in spec_chars:
+    req_datatest['work_notesnew2'] = req_datatest['work_notesnew2'].str.replace(char, ' ')
+
+req_datatest['work_notesnew2'][8]
+#req_datatest.to_csv(r'/Users/pjoshi2/Desktop/ML data/req_datatest.csv')
+
+##applying the model
+text_corpus = req_datatest['work_notesnew2'].to_list()
+
+#preprocess
+# Create a set of frequent words
+stoplist = set('for a of the and to in'.split(' '))
+# Lowercase each document, split it by white space and filter out stopwords
+texts = [[word for word in document.lower().split()]
+         for document in text_corpus]
+
+# Count frequency of each word
+from collections import defaultdict
+frequency = defaultdict(int)
+for text in texts:
+    for token in text:
+        frequency[token] += 1
+        
+
+# Only keep words that appear more than once
+#will return sentences without such words   #check
+processed_corpus = [[token for token in text if frequency[token] > 1] for text in texts]
+import gensim
+#transformation before feeding to the model
+def tagged_document(list_of_list_of_words):
+   for i, list_of_words in enumerate(list_of_list_of_words):
+      yield gensim.models.doc2vec.TaggedDocument(list_of_words, [i])
+      
+data_for_training = list(tagged_document(processed_corpus))
+data_for_training
+#print(data_for_training [:1])
+
+#------------------------------model building----------------------------------
+model = gensim.models.doc2vec.Doc2Vec(vector_size=50, min_count=2, epochs=2)
+model.build_vocab(data_for_training)
+model.train(data_for_training, total_examples=model.corpus_count, epochs=model.epochs)
+#------------------------------------------------------------------------------
+
+#removing square brackets from integral values
+#test_df['tags'] = test_df['tags'].str[0]
+
+#testing
+test_data = "  - System  Alert#Alert0441057 has been repeated #1times.      - System  Alert# Alert0441057 created using rule 'Create Incident - SCOM'    - System  CTEMEA Middle Office Support  ".lower().split()
+#vectoral representation of the tested text
+v1 = model.infer_vector(test_data)
+#enlists similar vectors to the searched text
+sims_new = model.docvecs.most_similar([v1], topn=len(model.docvecs))
+#rank = sims_new.index
+
+sims_df =  pd.DataFrame(sims_new)
+sims_df.columns =['tags','similarity']
+
+text_df2 = pd.DataFrame(text_corpus)  
+text_df2['tags'] = text_df2.index 
+new_df = pd.merge(text_df2, sims_df, on=['tags'])
+
+new_df.sort_values(by=['similarity'], inplace=True)
+new_df.tail()
+
