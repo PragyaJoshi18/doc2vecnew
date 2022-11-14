@@ -1,17 +1,12 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Sep 28 22:08:57 2020
 
-@author: pjoshi2
-"""
 
 from nltk.corpus import stopwords 
 from nltk.tokenize import word_tokenize 
   
 # X = input("Enter first string: ").lower() 
 # Y = input("Enter second string: ").lower() 
-X ="File system /logs/app utilization 85% is high  saa3app2236xrp"
-Y ="File system /logs/app utilization 85% is high  saa3app2236xrp"
+X ="File system /logs/app utilization 85% is high  saa3777798xrp"
+Y ="File system /logs/app utilization 85% is high  saa9007998xrp"
   
 # tokenization 
 X_list = word_tokenize(X)  
