@@ -1,11 +1,11 @@
 import pandas as pd
 import re
-sn_rec = pd.read_csv("S:\\TechAnalytics\\Aditya Workspace\\Text Analytics\\p1 bridge notes.csv", encoding = 'cp1252')
-worknotes_csv = pd.read_csv("S:\\TechAnalytics\\Aditya Workspace\\Text Analytics\\IncidentText_P1_2020To2021.csv", encoding = 'cp1252')
+sn_rec = pd.read_csv("C:\\users\\pragya\\Text Analytics\\p1 bridge notes.csv", encoding = 'cp1252')
+worknotes_csv = pd.read_csv("C:\\users\\pragya\\Text Analytics\\IncidentText_P1_2020To2021.csv", encoding = 'cp1252')
 
 import os
 import glob
-path = r'C:\\Users\\pjoshi2\\Desktop\\ML data\\alldata'                     # use your path
+path = r'C:\\users\\pragya\\Desktop\\ML data\\alldata'                     # use your path
 all_files = glob.glob(os.path.join(path, "*.xlsx"))     # advisable to use os.path.join as this makes concatenation OS independent
 import pandas as pd
 df_from_each_file = (pd.read_excel(f) for f in all_files)
